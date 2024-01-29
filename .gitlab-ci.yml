@@ -1,0 +1,64 @@
+variables:
+  CI_COMMIT_DEV_IMAGE: $CI_COMMIT_IMAGE-dev
+
+include:
+  - project: eng/ci-templates
+    file: /docker.yml
+  - project: eng/ci-templates
+    file: /kustomize.yml
+
+build:
+  extends: .docker:build
+
+build:dev:
+  extends: .docker:build
+  variables:
+    DOCKER_TARGET: dev
+
+test:black:
+  stage: test
+  image: $CI_COMMIT_DEV_IMAGE
+  script:
+    - cd /app
+    - poetry run black . --check
+
+test:flake8:
+  stage: test
+  image: $CI_COMMIT_DEV_IMAGE
+  script:
+    - cd /app
+    - poetry run flake8
+
+test:mypy:
+  stage: test
+  image: $CI_COMMIT_DEV_IMAGE
+  script:
+    - cd /app
+    - poetry run mypy .
+
+test:migrations:db:
+  stage: test
+  image: $CI_COMMIT_DEV_IMAGE
+  services:
+    - alias: database
+      name: $CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX/postgres:15.2
+  variables:
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: postgres
+    DB_HOST: database
+    DB_PORT: 5432
+    DB_NAME: postgres
+  script:
+    - cd /app
+    - poetry run alembic upgrade head
+    - poetry run alembic check
+
+release:
+  extends: .docker:release:tag
+
+deploy:kustomize:
+  extends: .kustomize:deploy
+  variables:
+    IMAGE_PLACEHOLDER_NAME: HOUSING_COMPONENT_IMAGE_PLACEHOLDER
+    IMAGE_TAG: $CI_COMMIT_TAG
+  only: [tags]
